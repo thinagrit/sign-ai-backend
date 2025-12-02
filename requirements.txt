@@ -3,8 +3,8 @@ uvicorn[standard]
 sqlalchemy
 pydantic
 python-multipart
-opencv-python
 numpy
 protobuf
 tensorflow==2.20.0
+
 

@@ -1,38 +1,23 @@
-# Python cache
 __pycache__/
 *.pyc
 *.pyo
 
-# Virtual environment (ห้าม push ขึ้น GitHub)
 venv/
 .env
 
-# SQLite database (ไม่ควร push)
 signai.db
 
-# Training scripts (ไฟล์ mock หรือ training ที่ไม่จำเป็น)
-create_dummy_model.py
+# ไม่ต้องการโมเดลใหญ่เก่าที่ไม่ใช้
+*.h5
+*.keras
+*.pb
 
-# Dataset / Raw data ที่ไม่จำเป็นบน server
+# dataset ดิบ/ใหญ่
 collected_data/
+dataset/
+data/
 
-# Ignore model files except TFLite and labels
-model_data/*.h5
-model_data/*.keras
-model_data/*.pb
-model_data/*.tflite.bak
-
-# allow only model.tflite and labels.txt
-!model_data/model.tflite
-!model_data/labels.txt
-
-# OS / Temp files
+# system
 .DS_Store
 *.swp
-*.swo
 *.tmp
-
-# Build cache
-build/
-dist/
-*.egg-info/
