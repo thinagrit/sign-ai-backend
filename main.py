@@ -1,10 +1,11 @@
-from fastapi import FastAPI, UploadFile, File, Depends
+from fastapi import FastAPI, UploadFile, File, Depends, Form
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 import numpy as np
 import cv2
 import threading
+import os
 import tflite_runtime.interpreter as tflite
 
 from database import Base, engine, get_db
@@ -12,16 +13,16 @@ import crud
 from schemas import PredictionCreate, PredictionOut
 
 
-# --------------------------
-# INIT DB
-# --------------------------
+# ============================================================
+# INIT DATABASE
+# ============================================================
 Base.metadata.create_all(bind=engine)
 
 app = FastAPI()
 
-# --------------------------
+# ============================================================
 # CORS
-# --------------------------
+# ============================================================
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -29,43 +30,57 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# --------------------------
-# LOAD TFLITE MODEL
-# --------------------------
-interpreter = tflite.Interpreter(model_path="model_data/model.tflite")
+
+# ============================================================
+# LOAD MODEL
+# ============================================================
+MODEL_PATH = "model_data/model.tflite"
+
+if not os.path.exists(MODEL_PATH):
+    raise RuntimeError("❌ ERROR: model_data/model.tflite ไม่พบไฟล์")
+
+interpreter = tflite.Interpreter(model_path=MODEL_PATH)
 interpreter.allocate_tensors()
 
 input_details = interpreter.get_input_details()
 output_details = interpreter.get_output_details()
 
-# Extract model input shape
-model_shape = input_details[0]["shape"]   # เช่น (1, 224, 224, 3) หรือ (1, 63)
+# ตัวอย่าง shape:
+# image model → (1, 224, 224, 3)
+# landmark model → (1, 63)
+model_shape = input_details[0]["shape"]
 
-# Lock ป้องกัน multi-thread crash
+# Lock กัน multi-thread ทำให้ interpreter พัง
 model_lock = threading.Lock()
 
 
+# ============================================================
+# ROOT
+# ============================================================
 @app.get("/")
 def root():
     return {"message": "Backend Running OK"}
 
 
 # ============================================================
-# PREDICT (image input)
+# PREDICT (IMAGE)
 # ============================================================
 @app.post("/predict")
 async def predict(file: UploadFile = File(...), db: Session = Depends(get_db)):
 
+    # ถ้าโมเดลไม่ใช่รูปภาพ
     if model_shape[-1] != 3:
-        return {"error": "โมเดลนี้ไม่รองรับรูปภาพ"}
+        return {"error": "โมเดลนี้ไม่ใช่แบบ image-based"}
 
     contents = await file.read()
     img = cv2.imdecode(np.frombuffer(contents, np.uint8), cv2.IMREAD_COLOR)
 
     if img is None:
-        return {"error": "ไม่สามารถอ่านรูปภาพได้"}
+        return {"error": "อ่านรูปภาพไม่ได้"}
 
-    img = cv2.resize(img, (model_shape[1], model_shape[2]))
+    # resize ตามรูปแบบโมเดล
+    h, w = model_shape[1], model_shape[2]
+    img = cv2.resize(img, (w, h))
     img = img.astype("float32") / 255.0
     img = np.expand_dims(img, axis=0)
 
@@ -80,7 +95,7 @@ async def predict(file: UploadFile = File(...), db: Session = Depends(get_db)):
 
     saved = crud.create_prediction(
         db,
-        PredictionCreate(label=label, confidence=confidence, source="predict")
+        PredictionCreate(label=label, confidence=confidence, source="predict"),
     )
 
     return {
@@ -91,17 +106,17 @@ async def predict(file: UploadFile = File(...), db: Session = Depends(get_db)):
 
 
 # ============================================================
-# TRANSLATE (63 landmark input)
+# TRANSLATE (63 LANDMARKS)
 # ============================================================
 class Landmark63(BaseModel):
-    points: list[float]   # 63 values
+    points: list[float]
 
 
 @app.post("/translate")
 async def translate_landmarks(payload: Landmark63, db: Session = Depends(get_db)):
 
     if model_shape[-1] == 3:
-        return {"error": "โมเดลนี้รองรับเฉพาะรูปภาพ ไม่ใช่ landmark"}
+        return {"error": "โมเดลนี้ต้องเป็น landmark-based ไม่ใช่ image-based"}
 
     if len(payload.points) != model_shape[1]:
         return {"error": f"ต้องส่ง landmark {model_shape[1]} ค่า"}
@@ -119,7 +134,7 @@ async def translate_landmarks(payload: Landmark63, db: Session = Depends(get_db)
 
     saved = crud.create_prediction(
         db,
-        PredictionCreate(label=label, confidence=confidence, source="translate")
+        PredictionCreate(label=label, confidence=confidence, source="translate"),
     )
 
     return {
@@ -130,11 +145,43 @@ async def translate_landmarks(payload: Landmark63, db: Session = Depends(get_db)
 
 
 # ============================================================
-# SAVE (from frontend)
+# SAVE IMAGE (FROM CAMERA)
 # ============================================================
-@app.post("/save", response_model=PredictionOut)
-async def save(data: PredictionCreate, db: Session = Depends(get_db)):
-    return crud.create_prediction(db, data)
+@app.post("/save-image")
+async def save_image(
+    file: UploadFile = File(...),
+    label: str = Form(...),
+    db: Session = Depends(get_db)
+):
+
+    # folder dataset/{label}
+    save_dir = f"dataset/{label}"
+    os.makedirs(save_dir, exist_ok=True)
+
+    # ชื่อไฟล์ใหม่
+    existing = len(os.listdir(save_dir))
+    filename = f"img_{existing + 1:05d}.jpg"
+    filepath = f"{save_dir}/{filename}"
+
+    # save file
+    contents = await file.read()
+    with open(filepath, "wb") as f:
+        f.write(contents)
+
+    # บันทึก database
+    data = PredictionCreate(
+        label=label,
+        confidence=0.0,
+        source="save-image",
+    )
+    saved = crud.create_prediction(db, data)
+
+    return {
+        "message": "saved",
+        "path": filepath,
+        "db_id": saved.id,
+        "timestamp": saved.created_at,
+    }
 
 
 # ============================================================
@@ -143,45 +190,3 @@ async def save(data: PredictionCreate, db: Session = Depends(get_db)):
 @app.get("/dataset", response_model=list[PredictionOut])
 def get_dataset(db: Session = Depends(get_db)):
     return crud.get_all_predictions(db)
-
-import os
-from fastapi import UploadFile, File, Form
-
-# ============================================================
-#   SAVE IMAGE ENDPOINT  (บันทึกภาพจากกล้อง)
-# ============================================================
-
-@app.post("/save-image")
-async def save_image(
-    file: UploadFile = File(...),
-    label: str = Form(...),
-    db: Session = Depends(get_db)
-):
-    # สร้างโฟลเดอร์ dataset/label ถ้ายังไม่มี
-    save_dir = f"dataset/{label}"
-    os.makedirs(save_dir, exist_ok=True)
-
-    # ตั้งชื่อไฟล์ใหม่
-    existing = len(os.listdir(save_dir))
-    filename = f"img_{existing+1:05d}.jpg"
-    filepath = f"{save_dir}/{filename}"
-
-    # บันทึกไฟล์ภาพลงเครื่อง
-    contents = await file.read()
-    with open(filepath, "wb") as f:
-        f.write(contents)
-
-    # บันทึกลง database
-    data = PredictionCreate(
-        label=label,
-        confidence=0.0,           # ไม่มีค่าความมั่นใจ เพราะยังไม่ผ่านโมเดล
-        source="save-image"
-    )
-    saved = crud.create_prediction(db, data)
-
-    return {
-        "message": "saved",
-        "path": filepath,
-        "db_id": saved.id,
-        "timestamp": saved.created_at
-    }
