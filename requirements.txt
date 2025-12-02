@@ -6,6 +6,4 @@ pydantic
 python-multipart
 numpy
 protobuf
-tensorflow==2.20.0
-
-
+tflite-runtime==2.14.0
