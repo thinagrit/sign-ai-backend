@@ -1,16 +1,16 @@
 from sqlalchemy.orm import Session
-import models, schemas
+from models import Prediction
 
-def create_prediction(db: Session, pred: schemas.PredictionCreate):
-    db_item = models.Prediction(
-        label=pred.label,
-        confidence=pred.confidence,
-        source=pred.source,
+def save_prediction(db: Session, label: str, confidence: float, source: str):
+    record = Prediction(
+        label=label,
+        confidence=confidence,
+        source=source
     )
-    db.add(db_item)
+    db.add(record)
     db.commit()
-    db.refresh(db_item)
-    return db_item
+    db.refresh(record)
+    return record
 
-def get_predictions(db: Session, skip: int = 0, limit: int = 100):
-    return db.query(models.Prediction).offset(skip).limit(limit).all()
+def get_history(db: Session):
+    return db.query(Prediction).order_by(Prediction.id.desc()).all()
