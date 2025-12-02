@@ -26,3 +26,6 @@ def create_prediction(db: Session, data: PredictionCreate):
 
 def get_all_predictions(db: Session):
     """
+    ดึงข้อมูลทั้งหมดจากฐานข้อมูล โดยเรียงจากใหม่ → เก่า
+    """
+    return db.query(Prediction).order_by(Prediction.id.desc()).all()
