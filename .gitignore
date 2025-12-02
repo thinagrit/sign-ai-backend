@@ -194,3 +194,6 @@ dist
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 >>>>>>> 4d2ee18f3ab2ca5099aa47df937a9caef8a21fa0
+venv/
+__pycache__/
+*.pyc
