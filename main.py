@@ -143,3 +143,45 @@ async def save(data: PredictionCreate, db: Session = Depends(get_db)):
 @app.get("/dataset", response_model=list[PredictionOut])
 def get_dataset(db: Session = Depends(get_db)):
     return crud.get_all_predictions(db)
+
+import os
+from fastapi import UploadFile, File, Form
+
+# ============================================================
+#   SAVE IMAGE ENDPOINT  (บันทึกภาพจากกล้อง)
+# ============================================================
+
+@app.post("/save-image")
+async def save_image(
+    file: UploadFile = File(...),
+    label: str = Form(...),
+    db: Session = Depends(get_db)
+):
+    # สร้างโฟลเดอร์ dataset/label ถ้ายังไม่มี
+    save_dir = f"dataset/{label}"
+    os.makedirs(save_dir, exist_ok=True)
+
+    # ตั้งชื่อไฟล์ใหม่
+    existing = len(os.listdir(save_dir))
+    filename = f"img_{existing+1:05d}.jpg"
+    filepath = f"{save_dir}/{filename}"
+
+    # บันทึกไฟล์ภาพลงเครื่อง
+    contents = await file.read()
+    with open(filepath, "wb") as f:
+        f.write(contents)
+
+    # บันทึกลง database
+    data = PredictionCreate(
+        label=label,
+        confidence=0.0,           # ไม่มีค่าความมั่นใจ เพราะยังไม่ผ่านโมเดล
+        source="save-image"
+    )
+    saved = crud.create_prediction(db, data)
+
+    return {
+        "message": "saved",
+        "path": filepath,
+        "db_id": saved.id,
+        "timestamp": saved.created_at
+    }
