@@ -25,7 +25,7 @@ app = FastAPI()
 # ============================================================
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["*"],   # Allow every frontend domain
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -37,7 +37,7 @@ app.add_middleware(
 MODEL_PATH = "model_data/model.tflite"
 
 if not os.path.exists(MODEL_PATH):
-    raise RuntimeError("❌ ERROR: model_data/model.tflite ไม่พบไฟล์")
+    raise RuntimeError("❌ ERROR: ไม่พบไฟล์ model_data/model.tflite")
 
 interpreter = tflite.Interpreter(model_path=MODEL_PATH)
 interpreter.allocate_tensors()
@@ -46,11 +46,11 @@ input_details = interpreter.get_input_details()
 output_details = interpreter.get_output_details()
 
 # ตัวอย่าง shape:
-# image model → (1, 224, 224, 3)
-# landmark model → (1, 63)
+#   รูปภาพ → (1, 224, 224, 3)
+#   Landmark → (1, 63)
 model_shape = input_details[0]["shape"]
 
-# Lock กัน multi-thread ทำให้ interpreter พัง
+# Lock กัน crash
 model_lock = threading.Lock()
 
 
@@ -63,14 +63,14 @@ def root():
 
 
 # ============================================================
-# PREDICT (IMAGE)
+# PREDICT (IMAGE INPUT)
 # ============================================================
 @app.post("/predict")
 async def predict(file: UploadFile = File(...), db: Session = Depends(get_db)):
 
-    # ถ้าโมเดลไม่ใช่รูปภาพ
+    # ถ้าโมเดลไม่ใช่แบบรูปภาพ
     if model_shape[-1] != 3:
-        return {"error": "โมเดลนี้ไม่ใช่แบบ image-based"}
+        return {"error": "โมเดลนี้รองรับ landmark เท่านั้น ไม่รองรับรูปภาพ"}
 
     contents = await file.read()
     img = cv2.imdecode(np.frombuffer(contents, np.uint8), cv2.IMREAD_COLOR)
@@ -78,7 +78,6 @@ async def predict(file: UploadFile = File(...), db: Session = Depends(get_db)):
     if img is None:
         return {"error": "อ่านรูปภาพไม่ได้"}
 
-    # resize ตามรูปแบบโมเดล
     h, w = model_shape[1], model_shape[2]
     img = cv2.resize(img, (w, h))
     img = img.astype("float32") / 255.0
@@ -106,7 +105,7 @@ async def predict(file: UploadFile = File(...), db: Session = Depends(get_db)):
 
 
 # ============================================================
-# TRANSLATE (63 LANDMARKS)
+# TRANSLATE (63 LANDMARK VALUES)
 # ============================================================
 class Landmark63(BaseModel):
     points: list[float]
@@ -116,7 +115,7 @@ class Landmark63(BaseModel):
 async def translate_landmarks(payload: Landmark63, db: Session = Depends(get_db)):
 
     if model_shape[-1] == 3:
-        return {"error": "โมเดลนี้ต้องเป็น landmark-based ไม่ใช่ image-based"}
+        return {"error": "โมเดลนี้รองรับรูปภาพ ไม่ใช่ landmark"}
 
     if len(payload.points) != model_shape[1]:
         return {"error": f"ต้องส่ง landmark {model_shape[1]} ค่า"}
@@ -153,17 +152,16 @@ async def save_image(
     label: str = Form(...),
     db: Session = Depends(get_db)
 ):
-
-    # folder dataset/{label}
+    # สร้าง dataset/<label> ถ้ายังไม่มี
     save_dir = f"dataset/{label}"
     os.makedirs(save_dir, exist_ok=True)
 
-    # ชื่อไฟล์ใหม่
+    # ชื่อไฟล์ img_00001.jpg
     existing = len(os.listdir(save_dir))
     filename = f"img_{existing + 1:05d}.jpg"
     filepath = f"{save_dir}/{filename}"
 
-    # save file
+    # Save image file
     contents = await file.read()
     with open(filepath, "wb") as f:
         f.write(contents)
@@ -172,7 +170,7 @@ async def save_image(
     data = PredictionCreate(
         label=label,
         confidence=0.0,
-        source="save-image",
+        source="save-image"
     )
     saved = crud.create_prediction(db, data)
 
@@ -185,7 +183,7 @@ async def save_image(
 
 
 # ============================================================
-# GET DATASET
+# GET DATASET (DATABASE)
 # ============================================================
 @app.get("/dataset", response_model=list[PredictionOut])
 def get_dataset(db: Session = Depends(get_db)):
