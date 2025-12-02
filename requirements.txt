@@ -5,6 +5,6 @@ pydantic
 python-multipart
 opencv-python
 numpy
-protobuf==4.25.3
-tensorflow-cpu==2.13.0
+protobuf
+tensorflow==2.20.0
 
