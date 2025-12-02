@@ -2,11 +2,9 @@ fastapi
 uvicorn[standard]
 sqlalchemy
 pydantic
-pillow
-opencv-python
 python-multipart
-numpy==1.26.4
+opencv-python
+numpy
 protobuf==4.25.3
-tflite-runtime
-
+tensorflow-cpu==2.13.0
 
