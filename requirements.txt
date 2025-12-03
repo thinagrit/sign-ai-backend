@@ -1,9 +1,6 @@
 fastapi
 uvicorn[standard]
 sqlalchemy
-opencv-python-headless==4.8.1.78
 pydantic
 python-multipart
 numpy==1.26.4
-protobuf
-tflite-runtime==2.14.0
