@@ -23,13 +23,16 @@ app = FastAPI()
 # ============================================================
 # CORS
 # ============================================================
+from fastapi.middleware.cors import CORSMiddleware
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],   # Allow every frontend domain
+    allow_origins=["*"],      # ถ้าจะล็อก domain เดี๋ยวผมทำให้ได้
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["*"]
 )
-
 
 # ============================================================
 # LOAD MODEL
