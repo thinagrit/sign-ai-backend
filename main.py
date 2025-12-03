@@ -1,8 +1,9 @@
-from fastapi import FastAPI, UploadFile, File, Form, Depends
+from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
-import os
+import numpy as np
+import tflite_runtime.interpreter as tflite
 
 from database import Base, engine, get_db
 import crud
@@ -12,54 +13,79 @@ from schemas import PredictionCreate, PredictionOut
 # INIT DB
 # -------------------------
 Base.metadata.create_all(bind=engine)
-
 app = FastAPI()
 
 # -------------------------
-# CORS (สำคัญมาก)
+# CORS (สำคัญ)
 # -------------------------
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  
+    allow_origins=["*"],
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 @app.get("/")
 def root():
-    return {"message": "Backend Running OK"}
+    return {"msg": "Backend OK - Landmark Model Running"}
+
+# ============================================================
+# LOAD MODEL
+# ============================================================
+
+MODEL_PATH = "model_data/model.tflite"
+
+interpreter = tflite.Interpreter(model_path=MODEL_PATH)
+interpreter.allocate_tensors()
+
+input_details = interpreter.get_input_details()
+output_details = interpreter.get_output_details()
+
+INPUT_SIZE = input_details[0]["shape"][1]  # เช่น 63 ค่า
+
+
+# =======================
+# LABELS (1–2 ท่า)
+# =======================
+
+LABELS = {
+    0: "สวัสดี",
+    1: "ขอบคุณ",
+    # ถ้ามีมากกว่า 2 ก็เพิ่มตรงนี้ได้
+}
 
 
 # ============================================================
-# TRANSLATE  (Mock model – ให้แปลได้ 1 ท่า)
+# REQUEST MODEL
 # ============================================================
 
-class Landmark63(BaseModel):
-    points: list[float]   # 63 ค่า
+class LandmarkInput(BaseModel):
+    points: list[float]
 
 
 @app.post("/translate")
-async def translate(payload: Landmark63, db: Session = Depends(get_db)):
+async def translate(payload: LandmarkInput, db: Session = Depends(get_db)):
 
-    if len(payload.points) != 63:
-        return {"error": "ต้องส่ง landmark 63 ค่า"}
+    # เช็คจำนวน landmark
+    if len(payload.points) != INPUT_SIZE:
+        return {"error": f"ต้องส่ง {INPUT_SIZE} ค่า แต่ส่งมา {len(payload.points)}"}
 
-    # --------------------------
-    # MOCK MODEL (เวอร์ชันง่ายสุด)
-    # --------------------------
+    arr = np.array(payload.points, dtype=np.float32).reshape(1, INPUT_SIZE)
 
-    # ถ้าข้อมูลเข้ามาเป็นอะไรก็แปลว่า “hello”
-    label = "hello"
-    confidence = 1.0
+    # run model
+    interpreter.set_tensor(input_details[0]["index"], arr)
+    interpreter.invoke()
+    output = interpreter.get_tensor(output_details[0]["index"])
+
+    pred_index = int(np.argmax(output))
+    confidence = float(np.max(output))
+
+    label = LABELS.get(pred_index, f"class_{pred_index}")
 
     # บันทึกลง DB
     saved = crud.create_prediction(
         db,
-        PredictionCreate(
-            label=label,
-            confidence=confidence,
-            source="translate"
-        )
+        PredictionCreate(label=label, confidence=confidence, source="translate")
     )
 
     return {
@@ -70,46 +96,9 @@ async def translate(payload: Landmark63, db: Session = Depends(get_db)):
 
 
 # ============================================================
-# SAVE IMAGE (ทำงานอยู่แล้ว)
-# ============================================================
-
-@app.post("/save-image")
-async def save_image(
-    file: UploadFile = File(...),
-    label: str = Form(...),
-    db: Session = Depends(get_db)
-):
-    save_dir = os.path.join("data", label)
-    os.makedirs(save_dir, exist_ok=True)
-
-    count = len([f for f in os.listdir(save_dir) if f.endswith(".jpg")])
-    filename = f"{label}_{count+1:04d}.jpg"
-    filepath = os.path.join(save_dir, filename)
-
-    contents = await file.read()
-    with open(filepath, "wb") as f:
-        f.write(contents)
-
-    saved = crud.create_prediction(
-        db,
-        PredictionCreate(
-            label=label,
-            confidence=0.0,
-            source="save-image"
-        )
-    )
-
-    return {
-        "message": "saved",
-        "path": filepath,
-        "id": saved.id
-    }
-
-
-# ============================================================
-# DATASET
+# GET DATASET
 # ============================================================
 
 @app.get("/dataset", response_model=list[PredictionOut])
-def get_dataset(db: Session = Depends(get_db)):
+def dataset(db: Session = Depends(get_db)):
     return crud.get_all_predictions(db)
