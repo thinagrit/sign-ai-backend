@@ -33,16 +33,31 @@ def root():
 # LOAD MODEL
 # ============================================================
 
-MODEL_PATH = "model_data/model.tflite"
+import os
+import requests
+import tflite_runtime.interpreter as tflite
 
+# direct download link ของ model.tflite (RAW file)
+MODEL_URL = "https://raw.githubusercontent.com/thinagrit/sign-ai-backend/b25b851a1dff663a766fe048175f3a770ccb4336/model_data/model.tflite"
+
+# ตำแหน่งที่เซฟโมเดลบน Render
+MODEL_PATH = "/opt/render/project/src/model.tflite"
+
+# ถ้าโมเดลยังไม่ถูกโหลด -> โหลดจาก URL
+if not os.path.exists(MODEL_PATH):
+    print("Downloading model from:", MODEL_URL)
+    r = requests.get(MODEL_URL)
+    with open(MODEL_PATH, "wb") as f:
+        f.write(r.content)
+
+# โหลดโมเดล
 interpreter = tflite.Interpreter(model_path=MODEL_PATH)
 interpreter.allocate_tensors()
 
 input_details = interpreter.get_input_details()
 output_details = interpreter.get_output_details()
 
-INPUT_SIZE = input_details[0]["shape"][1]  # เช่น 63 ค่า
-
+INPUT_SIZE = input_details[0]["shape"][1]
 
 # =======================
 # LABELS (1–2 ท่า)
