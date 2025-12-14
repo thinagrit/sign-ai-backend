@@ -5,17 +5,17 @@ from sqlalchemy.orm import Session
 import numpy as np
 import os
 import requests
-import tflite_runtime.interpreter as tflite
+import tensorflow as tf
 
 from database import Base, engine, get_db
 import crud
 from schemas import PredictionCreate, PredictionOut
 
 # ============================================================
-# INIT
+# INIT APP & DB
 # ============================================================
-
 Base.metadata.create_all(bind=engine)
+
 app = FastAPI(title="Sign AI Backend")
 
 app.add_middleware(
@@ -32,15 +32,11 @@ def root():
 # ============================================================
 # MODEL DOWNLOAD
 # ============================================================
-
-MODEL_URL = (
-    "https://github.com/thinagrit/sign-ai-backend/"
-    "releases/latest/download/model.tflite"
-)
+MODEL_URL = "https://github.com/thinagrit/sign-ai-backend/releases/download/v1.0.0/model.tflite"
 MODEL_PATH = "model.tflite"
 
 if not os.path.exists(MODEL_PATH):
-    print("⬇️ Downloading TFLite model...")
+    print("⬇️ Downloading model from GitHub Releases...")
     r = requests.get(MODEL_URL, timeout=60)
     r.raise_for_status()
     with open(MODEL_PATH, "wb") as f:
@@ -48,14 +44,14 @@ if not os.path.exists(MODEL_PATH):
     print("✅ Model downloaded")
 
 # ============================================================
-# LOAD TFLITE
+# LOAD TFLITE (ใช้ TensorFlow)
 # ============================================================
-
-interpreter = tflite.Interpreter(model_path=MODEL_PATH)
+interpreter = tf.lite.Interpreter(model_path=MODEL_PATH)
 interpreter.allocate_tensors()
 
 input_details = interpreter.get_input_details()
 output_details = interpreter.get_output_details()
+
 INPUT_SIZE = input_details[0]["shape"][1]
 
 LABELS = {
@@ -66,14 +62,12 @@ LABELS = {
 # ============================================================
 # REQUEST SCHEMA
 # ============================================================
-
 class LandmarkInput(BaseModel):
     points: list[float]
 
 # ============================================================
 # API
 # ============================================================
-
 @app.post("/translate")
 def translate(payload: LandmarkInput, db: Session = Depends(get_db)):
 
