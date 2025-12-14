@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 import numpy as np
 import os
 import requests
+
 import tflite_runtime.interpreter as tflite
 
 from database import Base, engine, get_db
@@ -12,7 +13,7 @@ import crud
 from schemas import PredictionCreate, PredictionOut
 
 # ============================================================
-# INIT APP & DB
+# INIT
 # ============================================================
 
 Base.metadata.create_all(bind=engine)
@@ -28,23 +29,21 @@ app.add_middleware(
 
 @app.get("/")
 def root():
-    return {
-        "status": "OK",
-        "model": "Sign AI (2 gestures: ปวดหัว, จาม)"
-    }
+    return {"status": "OK", "model": "Sign AI (headache, sneeze)"}
 
 # ============================================================
-# MODEL DOWNLOAD (GitHub Release)
+# MODEL DOWNLOAD (GitHub Releases)
 # ============================================================
 
 MODEL_URL = (
     "https://github.com/thinagrit/sign-ai-backend/"
-    "releases/download/untagged-df0480265f10566f93b7/model.tflite"
+    "releases/download/v1.0.0/model.tflite"
 )
+
 MODEL_PATH = "model.tflite"
 
 if not os.path.exists(MODEL_PATH):
-    print("⬇️ Downloading TFLite model...")
+    print("⬇️ Downloading model from GitHub Releases...")
     r = requests.get(MODEL_URL, timeout=60)
     r.raise_for_status()
     with open(MODEL_PATH, "wb") as f:
@@ -52,7 +51,7 @@ if not os.path.exists(MODEL_PATH):
     print("✅ Model downloaded")
 
 # ============================================================
-# LOAD TFLITE MODEL
+# LOAD TFLITE
 # ============================================================
 
 interpreter = tflite.Interpreter(model_path=MODEL_PATH)
