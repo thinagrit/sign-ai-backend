@@ -11,11 +11,13 @@ from database import Base, engine, get_db
 import crud
 from schemas import PredictionCreate, PredictionOut
 
-# -------------------------
-# INIT APP & DB
-# -------------------------
+# ============================================================
+# INIT
+# ============================================================
+
 Base.metadata.create_all(bind=engine)
-app = FastAPI()
+
+app = FastAPI(title="Sign AI Backend")
 
 app.add_middleware(
     CORSMiddleware,
@@ -26,20 +28,26 @@ app.add_middleware(
 
 @app.get("/")
 def root():
-    return {"status": "OK", "model": "Sign AI (2 gestures)"}
+    return {"status": "OK", "msg": "Sign AI backend running"}
 
-# -------------------------
-# MODEL CONFIG
-# -------------------------
+# ============================================================
+# MODEL DOWNLOAD
+# ============================================================
+
 MODEL_URL = "https://github.com/thinagrit/sign-ai-backend/releases/download/v1.0.0/model.tflite"
 MODEL_PATH = "model.tflite"
 
 if not os.path.exists(MODEL_PATH):
     print("⬇️ Downloading model...")
-    r = requests.get(MODEL_URL)
-    r.raise_for_status()   # <-- ถ้า 404 จะ error ตรงนี้
+    r = requests.get(MODEL_URL, timeout=60)
+    r.raise_for_status()
     with open(MODEL_PATH, "wb") as f:
         f.write(r.content)
+    print("✅ Model downloaded")
+
+# ============================================================
+# LOAD TFLITE
+# ============================================================
 
 interpreter = tflite.Interpreter(model_path=MODEL_PATH)
 interpreter.allocate_tensors()
@@ -54,16 +62,24 @@ LABELS = {
     1: "จาม",
 }
 
-# -------------------------
-# API
-# -------------------------
+# ============================================================
+# REQUEST SCHEMA
+# ============================================================
+
 class LandmarkInput(BaseModel):
     points: list[float]
 
+# ============================================================
+# API
+# ============================================================
+
 @app.post("/translate")
 def translate(payload: LandmarkInput, db: Session = Depends(get_db)):
+
     if len(payload.points) != INPUT_SIZE:
-        return {"error": f"ต้องส่ง {INPUT_SIZE} ค่า"}
+        return {
+            "error": f"ต้องส่ง {INPUT_SIZE} ค่า แต่ส่งมา {len(payload.points)}"
+        }
 
     arr = np.array(payload.points, dtype=np.float32).reshape(1, INPUT_SIZE)
 
@@ -71,18 +87,22 @@ def translate(payload: LandmarkInput, db: Session = Depends(get_db)):
     interpreter.invoke()
     output = interpreter.get_tensor(output_details[0]["index"])
 
-    idx = int(np.argmax(output))
-    conf = float(np.max(output))
-    label = LABELS.get(idx, "unknown")
+    pred_index = int(np.argmax(output))
+    confidence = float(np.max(output))
+    label = LABELS.get(pred_index, "unknown")
 
     saved = crud.create_prediction(
         db,
-        PredictionCreate(label=label, confidence=conf, source="api")
+        PredictionCreate(
+            label=label,
+            confidence=confidence,
+            source="translate"
+        )
     )
 
     return {
         "label": label,
-        "confidence": conf,
+        "confidence": confidence,
         "timestamp": saved.created_at
     }
 
