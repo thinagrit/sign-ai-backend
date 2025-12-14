@@ -30,24 +30,21 @@ app.add_middleware(
 def root():
     return {
         "status": "OK",
-        "model": "Sign AI (2 gestures)",
-        "labels": ["ปวดหัว", "จาม"]
+        "model": "Sign AI (2 gestures: ปวดหัว, จาม)"
     }
 
 # ============================================================
-# MODEL CONFIG
+# MODEL DOWNLOAD (GitHub Release)
 # ============================================================
 
-# ⚠️ ต้องเป็น release ที่ Publish แล้ว และชื่อไฟล์ตรง
 MODEL_URL = (
-    "https://github.com/thinagrit/sign-ai-backend/releases/tag/v1.0.0/model.tflite"
+    "https://github.com/thinagrit/sign-ai-backend/"
+    "releases/download/untagged-df0480265f10566f93b7/model.tflite"
 )
-
 MODEL_PATH = "model.tflite"
 
-# ดาวน์โหลดโมเดลถ้ายังไม่มี
 if not os.path.exists(MODEL_PATH):
-    print("⬇️ Downloading model...")
+    print("⬇️ Downloading TFLite model...")
     r = requests.get(MODEL_URL, timeout=60)
     r.raise_for_status()
     with open(MODEL_PATH, "wb") as f:
