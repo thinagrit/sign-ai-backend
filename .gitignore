@@ -1,0 +1,25 @@
+__pycache__/
+*.pyc
+*.pyo
+
+venv/
+.env
+
+signai.db
+
+# ไม่ต้องการโมเดลใหญ่เก่าที่ไม่ใช้
+*.h5
+*.keras
+*.pb
+
+# dataset ดิบ/ใหญ่
+collected_data/
+dataset/
+data/
+
+# system
+.DS_Store
+*.swp
+*.tmp
+
+!dataset/

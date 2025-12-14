@@ -1,0 +1,8 @@
+fastapi
+uvicorn[standard]
+sqlalchemy
+pydantic
+python-multipart
+numpy==1.23.5
+tflite-runtime==2.14.0
+requests
