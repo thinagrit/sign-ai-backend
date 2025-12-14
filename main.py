@@ -5,7 +5,6 @@ from sqlalchemy.orm import Session
 import numpy as np
 import os
 import requests
-
 import tflite_runtime.interpreter as tflite
 
 from database import Base, engine, get_db
@@ -17,7 +16,6 @@ from schemas import PredictionCreate, PredictionOut
 # ============================================================
 
 Base.metadata.create_all(bind=engine)
-
 app = FastAPI(title="Sign AI Backend")
 
 app.add_middleware(
@@ -32,18 +30,17 @@ def root():
     return {"status": "OK", "model": "Sign AI (headache, sneeze)"}
 
 # ============================================================
-# MODEL DOWNLOAD (GitHub Releases)
+# MODEL DOWNLOAD
 # ============================================================
 
 MODEL_URL = (
     "https://github.com/thinagrit/sign-ai-backend/"
-    "releases/download/v1.0.0/model.tflite"
+    "releases/latest/download/model.tflite"
 )
-
 MODEL_PATH = "model.tflite"
 
 if not os.path.exists(MODEL_PATH):
-    print("⬇️ Downloading model from GitHub Releases...")
+    print("⬇️ Downloading TFLite model...")
     r = requests.get(MODEL_URL, timeout=60)
     r.raise_for_status()
     with open(MODEL_PATH, "wb") as f:
@@ -59,7 +56,6 @@ interpreter.allocate_tensors()
 
 input_details = interpreter.get_input_details()
 output_details = interpreter.get_output_details()
-
 INPUT_SIZE = input_details[0]["shape"][1]
 
 LABELS = {
