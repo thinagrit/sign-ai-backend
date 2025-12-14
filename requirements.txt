@@ -4,5 +4,5 @@ sqlalchemy
 pydantic
 python-multipart
 numpy==1.23.5
-tensorflow==2.15.0
+tensorflow==2.14.0
 requests
