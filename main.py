@@ -41,7 +41,7 @@ def root():
 # ⚠️ ต้องเป็น release ที่ Publish แล้ว และชื่อไฟล์ตรง
 MODEL_URL = (
     "https://github.com/thinagrit/sign-ai-backend/"
-    "releases/Sign AI TFLite model/v1.0.0/model.tflite"
+    "releases/download/v1.0.0/Sign AI TFLite model/model.tflite"
 )
 
 MODEL_PATH = "model.tflite"
