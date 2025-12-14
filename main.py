@@ -12,47 +12,38 @@ import crud
 from schemas import PredictionCreate, PredictionOut
 
 # ============================================================
-# INIT DATABASE
+# INIT APP + DB
 # ============================================================
 
 Base.metadata.create_all(bind=engine)
-
 app = FastAPI(title="Sign AI Backend")
-
-# ============================================================
-# CORS
-# ============================================================
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],   # production จริงค่อยจำกัด domain
+    allow_origins=["*"],
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# ============================================================
-# ROOT
-# ============================================================
-
 @app.get("/")
 def root():
-    return {"status": "OK", "msg": "Sign AI Backend Running"}
+    return {"status": "OK", "model": "TFLite", "classes": ["ปวดหัว", "จาม"]}
 
 # ============================================================
-# LOAD MODEL (TFLite from GitHub Releases)
+# LOAD MODEL FROM GITHUB RELEASES
 # ============================================================
 
 MODEL_URL = "https://github.com/thinagrit/sign-ai-backend/releases/download/v1.0.0/model.tflite"
 MODEL_PATH = "model.tflite"
 
 if not os.path.exists(MODEL_PATH):
-    print("⬇️ Downloading model from GitHub Releases...")
+    print("📥 Downloading model from GitHub Releases...")
     r = requests.get(MODEL_URL, timeout=60)
     r.raise_for_status()
     with open(MODEL_PATH, "wb") as f:
         f.write(r.content)
 
-print("✅ Model ready:", MODEL_PATH)
+print("✅ Model ready")
 
 interpreter = tflite.Interpreter(model_path=MODEL_PATH)
 interpreter.allocate_tensors()
@@ -67,8 +58,8 @@ INPUT_SIZE = input_details[0]["shape"][1]
 # ============================================================
 
 LABELS = {
-    0: "ปวดหัว",   # headache
-    1: "จาม",      # sneeze
+    0: "ปวดหัว",
+    1: "จาม",
 }
 
 # ============================================================
@@ -79,7 +70,7 @@ class LandmarkInput(BaseModel):
     points: list[float]
 
 # ============================================================
-# TRANSLATE API
+# TRANSLATE ENDPOINT
 # ============================================================
 
 @app.post("/translate")
@@ -87,7 +78,7 @@ def translate(payload: LandmarkInput, db: Session = Depends(get_db)):
 
     if len(payload.points) != INPUT_SIZE:
         return {
-            "error": f"ต้องส่ง landmark {INPUT_SIZE} ค่า แต่ได้ {len(payload.points)} ค่า"
+            "error": f"ต้องส่ง {INPUT_SIZE} ค่า แต่ส่งมา {len(payload.points)}"
         }
 
     x = np.array(payload.points, dtype=np.float32).reshape(1, INPUT_SIZE)
@@ -111,12 +102,12 @@ def translate(payload: LandmarkInput, db: Session = Depends(get_db)):
 
     return {
         "label": label,
-        "confidence": confidence,
+        "confidence": round(confidence, 4),
         "timestamp": saved.created_at
     }
 
 # ============================================================
-# GET ALL PREDICTIONS
+# HISTORY ENDPOINT
 # ============================================================
 
 @app.get("/dataset", response_model=list[PredictionOut])
