@@ -12,8 +12,9 @@ import crud
 from schemas import PredictionCreate, PredictionOut
 
 # ============================================================
-# INIT APP & DB
+# INIT
 # ============================================================
+
 Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title="Sign AI Backend")
@@ -32,11 +33,12 @@ def root():
 # ============================================================
 # MODEL DOWNLOAD
 # ============================================================
+
 MODEL_URL = "https://github.com/thinagrit/sign-ai-backend/releases/download/v1.0.0/model.tflite"
 MODEL_PATH = "model.tflite"
 
 if not os.path.exists(MODEL_PATH):
-    print("⬇️ Downloading model from GitHub Releases...")
+    print("⬇️ Downloading model...")
     r = requests.get(MODEL_URL, timeout=60)
     r.raise_for_status()
     with open(MODEL_PATH, "wb") as f:
@@ -44,8 +46,9 @@ if not os.path.exists(MODEL_PATH):
     print("✅ Model downloaded")
 
 # ============================================================
-# LOAD TFLITE (ใช้ TensorFlow)
+# LOAD TFLITE (TensorFlow)
 # ============================================================
+
 interpreter = tf.lite.Interpreter(model_path=MODEL_PATH)
 interpreter.allocate_tensors()
 
@@ -62,12 +65,14 @@ LABELS = {
 # ============================================================
 # REQUEST SCHEMA
 # ============================================================
+
 class LandmarkInput(BaseModel):
     points: list[float]
 
 # ============================================================
 # API
 # ============================================================
+
 @app.post("/translate")
 def translate(payload: LandmarkInput, db: Session = Depends(get_db)):
 
