@@ -12,7 +12,7 @@ import crud
 from schemas import PredictionCreate, PredictionOut
 
 # ============================================================
-# INIT
+# INIT APP & DB
 # ============================================================
 
 Base.metadata.create_all(bind=engine)
@@ -28,15 +28,25 @@ app.add_middleware(
 
 @app.get("/")
 def root():
-    return {"status": "OK", "msg": "Sign AI backend running"}
+    return {
+        "status": "OK",
+        "model": "Sign AI (2 gestures)",
+        "labels": ["ปวดหัว", "จาม"]
+    }
 
 # ============================================================
-# MODEL DOWNLOAD
+# MODEL CONFIG
 # ============================================================
 
-MODEL_URL = "https://github.com/thinagrit/sign-ai-backend/releases/download/v1.0.0/model.tflite"
+# ⚠️ ต้องเป็น release ที่ Publish แล้ว และชื่อไฟล์ตรง
+MODEL_URL = (
+    "https://github.com/thinagrit/sign-ai-backend/"
+    "releases/download/v1.0.0/model.tflite"
+)
+
 MODEL_PATH = "model.tflite"
 
+# ดาวน์โหลดโมเดลถ้ายังไม่มี
 if not os.path.exists(MODEL_PATH):
     print("⬇️ Downloading model...")
     r = requests.get(MODEL_URL, timeout=60)
@@ -46,7 +56,7 @@ if not os.path.exists(MODEL_PATH):
     print("✅ Model downloaded")
 
 # ============================================================
-# LOAD TFLITE
+# LOAD TFLITE MODEL
 # ============================================================
 
 interpreter = tflite.Interpreter(model_path=MODEL_PATH)
