@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 import numpy as np
 import os
 import requests
-import tensorflow as tf
+import tflite_runtime.interpreter as tflite
 
 from database import Base, engine, get_db
 import crud
@@ -31,12 +31,12 @@ def root():
     return {"status": "OK", "model": "Sign AI (headache, sneeze)"}
 
 # ============================================================
-# MODEL DOWNLOAD (GitHub Releases)
+# MODEL DOWNLOAD (GitHub Release Asset)
 # ============================================================
 
 MODEL_URL = (
-    "https://github.com/thinagrit/sign-ai-backend/"
-    "releases/download/v1.0.0/model.tflite"
+    "https://github.com/thinagrit/sign-ai-backend/releases/"
+    "download/v1.0.0/model.tflite"
 )
 MODEL_PATH = "model.tflite"
 
@@ -49,10 +49,10 @@ if not os.path.exists(MODEL_PATH):
     print("✅ Model downloaded")
 
 # ============================================================
-# LOAD TFLITE (TensorFlow version)
+# LOAD TFLITE (tflite-runtime)
 # ============================================================
 
-interpreter = tf.lite.Interpreter(model_path=MODEL_PATH)
+interpreter = tflite.Interpreter(model_path=MODEL_PATH)
 interpreter.allocate_tensors()
 
 input_details = interpreter.get_input_details()
@@ -69,38 +69,47 @@ LABELS = {
 # REQUEST SCHEMA
 # ============================================================
 
-class PredictInput(BaseModel):
+class LandmarkInput(BaseModel):
     points: list[float]
 
 # ============================================================
-# API: /predict  (⭐ frontend เรียก route นี้)
+# CORE INFERENCE FUNCTION
 # ============================================================
 
-@app.post("/predict")
-def predict(payload: PredictInput, db: Session = Depends(get_db)):
-
-    if len(payload.points) != INPUT_SIZE:
+def run_inference(points: list[float]):
+    if len(points) != INPUT_SIZE:
         raise HTTPException(
             status_code=422,
-            detail=f"ต้องส่ง {INPUT_SIZE} ค่า แต่ส่งมา {len(payload.points)}"
+            detail=f"ต้องส่ง {INPUT_SIZE} ค่า แต่ส่งมา {len(points)}"
         )
 
-    arr = np.array(payload.points, dtype=np.float32).reshape(1, INPUT_SIZE)
-
+    arr = np.array(points, dtype=np.float32).reshape(1, INPUT_SIZE)
     interpreter.set_tensor(input_details[0]["index"], arr)
     interpreter.invoke()
     output = interpreter.get_tensor(output_details[0]["index"])
 
-    pred_index = int(np.argmax(output))
-    confidence = float(np.max(output))
-    label = LABELS.get(pred_index, "unknown")
+    idx = int(np.argmax(output))
+    conf = float(np.max(output))
+    label = LABELS.get(idx, "unknown")
+
+    return label, conf
+
+# ============================================================
+# API ROUTES
+# ============================================================
+
+@app.post("/translate")
+@app.post("/predict")  # 🔥 รองรับ frontend เดิม
+def predict(payload: LandmarkInput, db: Session = Depends(get_db)):
+
+    label, confidence = run_inference(payload.points)
 
     saved = crud.create_prediction(
         db,
         PredictionCreate(
             label=label,
             confidence=confidence,
-            source="predict"
+            source="api"
         )
     )
 
@@ -110,10 +119,7 @@ def predict(payload: PredictInput, db: Session = Depends(get_db)):
         "timestamp": saved.created_at
     }
 
-# ============================================================
-# API: Dataset
-# ============================================================
-
 @app.get("/dataset", response_model=list[PredictionOut])
 def dataset(db: Session = Depends(get_db)):
     return crud.get_all_predictions(db)
+predictions(db)
