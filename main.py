@@ -49,7 +49,7 @@ if not os.path.exists(MODEL_PATH):
     print("✅ Model downloaded")
 
 # ============================================================
-# LOAD TFLITE
+# LOAD TFLITE (TensorFlow version)
 # ============================================================
 
 interpreter = tf.lite.Interpreter(model_path=MODEL_PATH)
@@ -66,57 +66,34 @@ LABELS = {
 }
 
 # ============================================================
-# REQUEST SCHEMA (Flexible)
+# REQUEST SCHEMA
 # ============================================================
 
 class PredictInput(BaseModel):
-    points: list[float] | None = None
-    landmarks: list[float] | None = None
-    data: list[float] | None = None
+    points: list[float]
 
 # ============================================================
-# CORE PREDICT FUNCTION
-# ============================================================
-
-def run_model(values: list[float]):
-    if len(values) != INPUT_SIZE:
-        raise HTTPException(
-            status_code=422,
-            detail=f"ต้องส่ง {INPUT_SIZE} ค่า แต่ส่งมา {len(values)}"
-        )
-
-    arr = np.array(values, dtype=np.float32).reshape(1, INPUT_SIZE)
-
-    interpreter.set_tensor(input_details[0]["index"], arr)
-    interpreter.invoke()
-    output = interpreter.get_tensor(output_details[0]["index"])
-
-    idx = int(np.argmax(output))
-    confidence = float(np.max(output))
-    label = LABELS.get(idx, "unknown")
-
-    return label, confidence
-
-# ============================================================
-# API: /predict (Frontend ใช้)
+# API: /predict  (⭐ frontend เรียก route นี้)
 # ============================================================
 
 @app.post("/predict")
 def predict(payload: PredictInput, db: Session = Depends(get_db)):
 
-    values = (
-        payload.points
-        or payload.landmarks
-        or payload.data
-    )
-
-    if values is None:
+    if len(payload.points) != INPUT_SIZE:
         raise HTTPException(
             status_code=422,
-            detail="ต้องส่ง points หรือ landmarks หรือ data"
+            detail=f"ต้องส่ง {INPUT_SIZE} ค่า แต่ส่งมา {len(payload.points)}"
         )
 
-    label, confidence = run_model(values)
+    arr = np.array(payload.points, dtype=np.float32).reshape(1, INPUT_SIZE)
+
+    interpreter.set_tensor(input_details[0]["index"], arr)
+    interpreter.invoke()
+    output = interpreter.get_tensor(output_details[0]["index"])
+
+    pred_index = int(np.argmax(output))
+    confidence = float(np.max(output))
+    label = LABELS.get(pred_index, "unknown")
 
     saved = crud.create_prediction(
         db,
@@ -134,43 +111,7 @@ def predict(payload: PredictInput, db: Session = Depends(get_db)):
     }
 
 # ============================================================
-# API: /translate (ของเดิม)
-# ============================================================
-
-@app.post("/translate")
-def translate(payload: PredictInput, db: Session = Depends(get_db)):
-
-    values = (
-        payload.points
-        or payload.landmarks
-        or payload.data
-    )
-
-    if values is None:
-        raise HTTPException(
-            status_code=422,
-            detail="ต้องส่ง points หรือ landmarks หรือ data"
-        )
-
-    label, confidence = run_model(values)
-
-    saved = crud.create_prediction(
-        db,
-        PredictionCreate(
-            label=label,
-            confidence=confidence,
-            source="translate"
-        )
-    )
-
-    return {
-        "label": label,
-        "confidence": confidence,
-        "timestamp": saved.created_at
-    }
-
-# ============================================================
-# DATASET
+# API: Dataset
 # ============================================================
 
 @app.get("/dataset", response_model=list[PredictionOut])
