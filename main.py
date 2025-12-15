@@ -1,10 +1,9 @@
-from fastapi import FastAPI, Depends
+from fastapi import FastAPI, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 import numpy as np
 import os
-import requests
 import tensorflow as tf
 
 from database import Base, engine, get_db
@@ -12,7 +11,7 @@ import crud
 from schemas import PredictionCreate, PredictionOut
 
 # ============================================================
-# INIT
+# INIT DB & APP
 # ============================================================
 
 Base.metadata.create_all(bind=engine)
@@ -21,7 +20,7 @@ app = FastAPI(title="Sign AI Backend")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["*"],   # ใช้กับ Vercel
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -31,23 +30,13 @@ def root():
     return {"status": "OK", "model": "Sign AI (headache, sneeze)"}
 
 # ============================================================
-# MODEL DOWNLOAD
+# LOAD MODEL (LOCAL FILE – แนะนำที่สุด)
 # ============================================================
 
-MODEL_URL = "https://github.com/thinagrit/sign-ai-backend/releases/download/v1.0.0/model.tflite"
-MODEL_PATH = "model.tflite"
+MODEL_PATH = "model_data/model.tflite"
 
 if not os.path.exists(MODEL_PATH):
-    print("⬇️ Downloading model...")
-    r = requests.get(MODEL_URL, timeout=60)
-    r.raise_for_status()
-    with open(MODEL_PATH, "wb") as f:
-        f.write(r.content)
-    print("✅ Model downloaded")
-
-# ============================================================
-# LOAD TFLITE (TensorFlow)
-# ============================================================
+    raise RuntimeError("❌ model.tflite not found in model_data/")
 
 interpreter = tf.lite.Interpreter(model_path=MODEL_PATH)
 interpreter.allocate_tensors()
@@ -55,7 +44,7 @@ interpreter.allocate_tensors()
 input_details = interpreter.get_input_details()
 output_details = interpreter.get_output_details()
 
-INPUT_SIZE = input_details[0]["shape"][1]
+INPUT_SIZE = int(input_details[0]["shape"][1])
 
 LABELS = {
     0: "ปวดหัว",
@@ -70,20 +59,21 @@ class LandmarkInput(BaseModel):
     points: list[float]
 
 # ============================================================
-# API
+# API: /predict  (🔥 frontend เรียก path นี้)
 # ============================================================
 
-@app.post("/translate")
-def translate(payload: LandmarkInput, db: Session = Depends(get_db)):
+@app.post("/predict")
+def predict(payload: LandmarkInput, db: Session = Depends(get_db)):
 
     if len(payload.points) != INPUT_SIZE:
-        return {
-            "error": f"ต้องส่ง {INPUT_SIZE} ค่า แต่ส่งมา {len(payload.points)}"
-        }
+        raise HTTPException(
+            status_code=400,
+            detail=f"ต้องส่ง {INPUT_SIZE} ค่า แต่ส่งมา {len(payload.points)}"
+        )
 
-    arr = np.array(payload.points, dtype=np.float32).reshape(1, INPUT_SIZE)
+    x = np.array(payload.points, dtype=np.float32).reshape(1, INPUT_SIZE)
 
-    interpreter.set_tensor(input_details[0]["index"], arr)
+    interpreter.set_tensor(input_details[0]["index"], x)
     interpreter.invoke()
     output = interpreter.get_tensor(output_details[0]["index"])
 
@@ -96,7 +86,7 @@ def translate(payload: LandmarkInput, db: Session = Depends(get_db)):
         PredictionCreate(
             label=label,
             confidence=confidence,
-            source="translate"
+            source="predict"
         )
     )
 
@@ -105,6 +95,10 @@ def translate(payload: LandmarkInput, db: Session = Depends(get_db)):
         "confidence": confidence,
         "timestamp": saved.created_at
     }
+
+# ============================================================
+# API: dataset (optional)
+# ============================================================
 
 @app.get("/dataset", response_model=list[PredictionOut])
 def dataset(db: Session = Depends(get_db)):
